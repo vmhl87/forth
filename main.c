@@ -20,6 +20,7 @@ symbol_vec new_symbol_vec() {
 	ret.size = 0;
 	ret.capacity = 4;
 	ret.data = malloc(sizeof(symbol_t) * ret.capacity);
+	return ret;
 }
 
 void push_symbol_vec(symbol_vec* v, symbol_t s) {
@@ -32,7 +33,7 @@ void push_symbol_vec(symbol_vec* v, symbol_t s) {
 }
 
 void pop_symbol_vec(symbol_vec* v) {
-	assert(v->size > 1);
+	assert(v->size > 0);
 	--v->size;
 	if (v->size < v->capacity/4 && v->capacity > 4) {
 		v->capacity /= 4;
@@ -152,7 +153,7 @@ void exec_primitive(int32_t fid) {
 	// arithmetic
 	if (fid == cmp++) {
 		if (stack.size >= 2 && stack.data[stack.size-1].type == 1 &&
-				stack.data[stack.size-2].type == 2) {
+				stack.data[stack.size-2].type == 1) {
 			symbol_t res;
 			res.type = 1;
 			res.data = stack.data[stack.size-2].data +
@@ -171,7 +172,7 @@ void exec_primitive(int32_t fid) {
 	}
 	if (fid == cmp++) {
 		if (stack.size >= 2 && stack.data[stack.size-1].type == 1 &&
-				stack.data[stack.size-2].type == 2) {
+				stack.data[stack.size-2].type == 1) {
 			symbol_t res;
 			res.type = 1;
 			res.data = stack.data[stack.size-2].data -
@@ -190,7 +191,7 @@ void exec_primitive(int32_t fid) {
 	}
 	if (fid == cmp++) {
 		if (stack.size >= 2 && stack.data[stack.size-1].type == 1 &&
-				stack.data[stack.size-2].type == 2) {
+				stack.data[stack.size-2].type == 1) {
 			symbol_t res;
 			res.type = 1;
 			res.data = stack.data[stack.size-2].data *
@@ -209,7 +210,7 @@ void exec_primitive(int32_t fid) {
 	}
 	if (fid == cmp++) {
 		if (stack.size >= 2 && stack.data[stack.size-1].type == 1 &&
-				stack.data[stack.size-2].type == 2) {
+				stack.data[stack.size-2].type == 1) {
 			if (stack.data[stack.size-2].data == 0) {
 				printf("ERR: division by zero: ");
 				show_symbol(stack.size-2);
@@ -236,7 +237,7 @@ void exec_primitive(int32_t fid) {
 	}
 	if (fid == cmp++) {
 		if (stack.size >= 2 && stack.data[stack.size-1].type == 1 &&
-				stack.data[stack.size-2].type == 2) {
+				stack.data[stack.size-2].type == 1) {
 			if (stack.data[stack.size-2].data == 0) {
 				printf("ERR: modulo by zero: ");
 				show_symbol(stack.size-2);
@@ -265,7 +266,7 @@ void exec_primitive(int32_t fid) {
 	// bitwise
 	if (fid == cmp++) {
 		if (stack.size >= 2 && stack.data[stack.size-1].type == 1 &&
-				stack.data[stack.size-2].type == 2) {
+				stack.data[stack.size-2].type == 1) {
 			symbol_t res;
 			res.type = 1;
 			res.data = stack.data[stack.size-2].data &
@@ -284,7 +285,7 @@ void exec_primitive(int32_t fid) {
 	}
 	if (fid == cmp++) {
 		if (stack.size >= 2 && stack.data[stack.size-1].type == 1 &&
-				stack.data[stack.size-2].type == 2) {
+				stack.data[stack.size-2].type == 1) {
 			symbol_t res;
 			res.type = 1;
 			res.data = stack.data[stack.size-2].data |
@@ -303,7 +304,7 @@ void exec_primitive(int32_t fid) {
 	}
 	if (fid == cmp++) {
 		if (stack.size >= 2 && stack.data[stack.size-1].type == 1 &&
-				stack.data[stack.size-2].type == 2) {
+				stack.data[stack.size-2].type == 1) {
 			symbol_t res;
 			res.type = 1;
 			res.data = stack.data[stack.size-2].data ^
@@ -397,6 +398,23 @@ bool implementation_exists(int32_t fid) {
 void exec(int32_t fid) {
 }
 
+void exec_loop() {
+	while (stack.size && stack.data[stack.size-1].type == 0) {
+		int32_t fid = stack.data[stack.size-1].data;
+		pop_symbol_vec(&stack);
+
+		if (fid < PRIMITIVE_FLOOR) exec_primitive(fid);
+		else if (implementation_exists(fid)) exec(fid);
+		else {
+			// TODO: throw less generic error
+			printf("ERR: function not implemented: id(%d) sym(", fid);
+			// show_symbol(fid);
+			printf(")\n");
+			return;
+		}
+	}
+}
+
 int main() {
 	ERR.type = -1;
 
@@ -408,9 +426,13 @@ int main() {
 	while (1) {
 		printf("> "); fflush(stdout);
 
-		char *line;
+		char *line = nullptr;
+		size_t capacity;
 		ssize_t bytes;
-		if ((bytes = getline(&line, &bytes, stdin)) == -1) break;
+		if ((bytes = getline(&line, &capacity, stdin)) == -1) break;
+
+		for (size_t i=0; i<bytes; ++i) if (line[i] == '[' || line[i] == ']')
+			line[i] = ' ';
 
 		{
 			// 1: str
@@ -423,25 +445,28 @@ int main() {
 
 			for (size_t i=0; i<bytes; ++i) {
 				if (is_whitespace(line[i])) {
-					symbol_t res;
+					if (state != 0) {
+						symbol_t res;
 
-					if (state == 1) {
-						// insert into vec, return id
-						res.data = lookup_string_vec(&symbols,
-								line+start, i-start);
-						if (res.data == -1) {
-							push_string_vec(&symbols, line+start, i-start);
+						if (state == 1) {
+							// insert into vec, return id
 							res.data = lookup_string_vec(&symbols,
 									line+start, i-start);
+							if (res.data == -1) {
+								push_string_vec(&symbols, line+start, i-start);
+								res.data = lookup_string_vec(&symbols,
+										line+start, i-start);
+							}
+							res.type = 0;
+
+						} else if (state == 2 || state == 3) {
+							res.data = int_buf;
+							res.type = 1;
 						}
-						res.type = 0;
 
-					} else if (state == 2 || state == 3) {
-						res.data = int_buf;
-						res.type = 1;
+						push_symbol_vec(&stack, res);
+						exec_loop();
 					}
-
-					push_symbol_vec(&stack, res);
 
 					state = 0;
 					start = i+1;
@@ -480,20 +505,7 @@ int main() {
 			if (bytes != 0) free(line);
 		};
 
-		while (stack.size && stack.data[stack.size-1].type == 0) {
-			int32_t fid = stack.data[stack.size-1].data;
-			pop_symbol_vec(&stack);
-
-			if (fid < PRIMITIVE_FLOOR) exec_primitive(fid);
-			else if (implementation_exists(fid)) exec(fid);
-			else {
-				// TODO: throw less generic error
-				printf("ERR: function not implemented: id(%d) sym(", fid);
-				// show_symbol(fid);
-				printf(")\n");
-				break;
-			}
-		}
+		exec_loop();
 
 		if (stack.size != 0) {
 			puts("[execution stack not empty]");
