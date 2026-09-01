@@ -42,12 +42,20 @@ void pop_symbol_vec(symbol_vec* v) {
 	}
 }
 
+void reset_symbol_vec(symbol_vec* v) {
+	free(v->data);
+	v->size = 0;
+	v->capacity = 4;
+	v->data = malloc(sizeof(symbol_t) * v->capacity);
+}
+
 symbol_vec stack;
 
 typedef struct {
 	char *strings;
 	size_t s_capacity, s_size;
 	size_t *indices;
+	symbol_vec *impl;
 	size_t capacity, size;
 } string_vec;
 
@@ -60,15 +68,18 @@ string_vec new_string_vec() {
 	ret.capacity = 4;
 	ret.indices = malloc(sizeof(size_t) * ret.capacity);
 	ret.indices[0] = 0;
+	ret.impl = malloc(sizeof(symbol_vec) * ret.capacity);
 	return ret;
 }
 
 void push_string_vec(string_vec *v, char *s, size_t l) {
+	v->impl[v->size] = new_symbol_vec();
 	++v->size;
 	v->indices[v->size] = v->s_size + l;
 	if (v->size+1 == v->capacity) {
 		v->capacity *= 2;
 		v->indices = realloc(v->indices, sizeof(size_t) * v->capacity);
+		v->impl = realloc(v->impl, sizeof(symbol_vec) * v->capacity);
 	}
 	size_t s_size = v->s_size + l;
 	if (s_size > v->s_capacity) {
@@ -108,7 +119,7 @@ void show_symbol(int32_t i) {
 	if (i < 0 || i >= stack.size) printf("<OOB>");
 	else if (stack.data[i].type == 0) {
 		int32_t fid = stack.data[i].data;
-		if (fid < 0 || fid >= symbols.s_size) printf("<INV>");
+		if (fid < 0 || fid >= symbols.size) printf("<INV>");
 		else {
 			for (size_t j=symbols.indices[fid]; j<symbols.indices[fid+1]; ++j) {
 				printf("%c", symbols.strings[j]);
@@ -144,7 +155,7 @@ void INIT_PRIMITIVES() {
 	push_string_vec(&symbols, "print", 5);
 	push_string_vec(&symbols, "show", 4);
 	// ---
-	PRIMITIVE_FLOOR = symbols.s_size;
+	PRIMITIVE_FLOOR = symbols.size;
 }
 
 void exec_primitive(int32_t fid) {
@@ -392,26 +403,79 @@ void exec_primitive(int32_t fid) {
 // TODO: add function exec (after function compilation)
 
 bool implementation_exists(int32_t fid) {
-	return false;
+	if (fid < 0 || fid >= symbols.size) return false;
+	return symbols.impl[fid].size > 0;
 }
 
-void exec(int32_t fid) {
+int exec_loop();
+
+int exec(int32_t fid) {
+	for (size_t i=0; i<symbols.impl[fid].size; ++i) {
+		push_symbol_vec(&stack, symbols.impl[fid].data[i]);
+		if (exec_loop()) return 1;
+	}
+
+	return 0;
 }
 
-void exec_loop() {
+// 0: execute
+// 1: compile
+// 2: just entered compile mode
+int32_t exec_mode = 0;
+int32_t compile_head = -1;
+
+int exec_loop() {
 	while (stack.size && stack.data[stack.size-1].type == 0) {
 		int32_t fid = stack.data[stack.size-1].data;
-		pop_symbol_vec(&stack);
 
-		if (fid < PRIMITIVE_FLOOR) exec_primitive(fid);
-		else if (implementation_exists(fid)) exec(fid);
-		else {
-			// TODO: throw less generic error
-			printf("ERR: function not implemented: id(%d) sym(", fid);
-			// show_symbol(fid);
+		if (implementation_exists(fid)) {
+			//printf("<<impl exists!! %d>>", fid);
+			pop_symbol_vec(&stack);
+			if (exec(fid)) return 1;
+
+		} else if (fid < PRIMITIVE_FLOOR) {
+			pop_symbol_vec(&stack);
+			exec_primitive(fid);
+
+		}else if (fid < 0 || fid >= symbols.size) {
+			printf("ERR: invalid function: id(%d)\n", fid);
+
+		} else {
+			printf("ERR: function not implemented: id(%d), sym(", fid);
+			for (size_t j=symbols.indices[fid]; j<symbols.indices[fid+1]; ++j) {
+				printf("%c", symbols.strings[j]);
+			}
 			printf(")\n");
-			return;
+			return 1;
 		}
+	}
+
+	return 0;
+}
+
+void process_symbol(symbol_t s) {
+	if (exec_mode == 0) {
+		push_symbol_vec(&stack, s);
+		exec_loop();
+
+	} else if(exec_mode == 1) {
+		if (compile_head < 0 || compile_head >= symbols.size) {
+			// TODO: fail somehow
+		} else {
+			push_symbol_vec(symbols.impl+compile_head, s);
+		}
+
+	} else if(exec_mode == 2) {
+		if (s.type == 1) {
+			puts("ERR: cannot assign function body to integer");
+			compile_head = -1;
+
+		} else {
+			compile_head = s.data;
+			reset_symbol_vec(symbols.impl+compile_head);
+		}
+
+		exec_mode = 1;
 	}
 }
 
@@ -431,6 +495,8 @@ int main() {
 		ssize_t bytes;
 		if ((bytes = getline(&line, &capacity, stdin)) == -1) break;
 
+		//printf("bytes: %d, last char: %d\n", bytes, line[bytes-1]);
+
 		for (size_t i=0; i<bytes; ++i) if (line[i] == '[' || line[i] == ']')
 			line[i] = ' ';
 
@@ -449,6 +515,11 @@ int main() {
 						symbol_t res;
 
 						if (state == 1) {
+							/*
+							printf("<<processing string (");
+							for (size_t j=start; j<i; ++j) printf("%c", line[j]);
+							printf(")>>");
+							*/
 							// insert into vec, return id
 							res.data = lookup_string_vec(&symbols,
 									line+start, i-start);
@@ -460,29 +531,37 @@ int main() {
 							res.type = 0;
 
 						} else if (state == 2 || state == 3) {
+							//printf("<<processing int (%d)>>", int_buf);
 							res.data = int_buf;
 							res.type = 1;
 						}
 
-						push_symbol_vec(&stack, res);
-						exec_loop();
+						//printf("<<exec mode: %d>>", exec_mode);
+						process_symbol(res);
+						//push_symbol_vec(&stack, res);
+						//exec_loop();
+
 					}
 
 					state = 0;
 					start = i+1;
 
-				} else if (line[0] == '{') {
-					// TODO implement function compilation
-					state = 0;
-					start = i+1;
-
-				} else if (line[0] == '}') {
-					// TODO implement function compilation
-					state = 0;
-					start = -1;
-
 				} else if (state == 0) {
-					if (line[i] == '-') {
+					// switch to define mode
+					if (line[i] == '{') {
+						exec_mode = 2;
+						
+						state = 0;
+						start = i+1;
+
+					} else if (line[i] == '}') {
+						exec_mode = 0;
+						compile_head = -1;
+
+						state = 0;
+						start = i+1;
+
+					} else if (line[i] == '-') {
 						int_buf = 0;
 						state = 3;
 
@@ -505,7 +584,7 @@ int main() {
 			if (bytes != 0) free(line);
 		};
 
-		exec_loop();
+		// exec_loop();
 
 		if (stack.size != 0) {
 			puts("[execution stack not empty]");
