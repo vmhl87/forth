@@ -155,6 +155,8 @@ bool is_whitespace(char c) {
 	if (c == ' ') return 1;
 	if (c == '\n') return 1;
 	if (c == '\t') return 1;
+	if (c == '(') return 1;
+	if (c == ')') return 1;
 	return 0;
 }
 
@@ -206,7 +208,7 @@ void INIT_PRIMITIVES() {
 	push_string_vec(&symbols, "if", 2);
 	push_string_vec(&symbols, "else", 4);
 	push_string_vec(&symbols, "then", 4);
-	CONDITIONAL_FLOOR = symbols.size;
+	CONDITIONAL_CEIL = symbols.size;
 	// exec
 	push_string_vec(&symbols, "exec", 4);
 	// ---
@@ -721,9 +723,9 @@ void exec(int32_t fid) {
 
 		if (logic_stack.size > 0) {
 			int32_t state = top_int_vec(&logic_stack);
-			if ((state == 2 || state == 3) && (s.type == 1 ||
+			if ((state == 2 || state == 3) && (s.type != 0 ||
 						s.data < CONDITIONAL_FLOOR ||
-						s.data >= CONDITIONAL_FLOOR + 3)) {
+						s.data >= CONDITIONAL_CEIL)) {
 				continue;
 			}
 		}
@@ -805,9 +807,6 @@ void process_symbol(symbol_t s) {
 }
 
 void interpret(char *line, ssize_t bytes) {
-	for (size_t i=0; i<bytes; ++i) if (line[i] == '(' || line[i] == ')')
-		line[i] = ' ';
-
 	// 1: str
 	// 2: int+
 	// 3: int-
@@ -915,6 +914,19 @@ int main() {
 	push_int_vec(&logic_stack, 0);
 
 	INIT_PRIMITIVES();
+
+	// BEGIN BUILTIN LOGIC
+	
+	static_interpret("{ nl 10 print pop }");
+	static_interpret("{ p show nl }");
+	static_interpret("{ P p pop }");
+
+	static_interpret("{ fib (0 get) (1 >) if "
+			"(0 get) (1 -) fib "
+			"(1 get) (2 -) fib "
+			"+ (0 set) then }");
+	
+	// END BUILTIN LOGIC
 
 	while (1) {
 		printf("\x1b[2;37m[%d%d]\x1b[0m ",
