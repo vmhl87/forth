@@ -8,7 +8,7 @@ void END_ERR_FMT() { printf("\x1b[0m"); }
 
 typedef struct {
 	int32_t data;
-	uint8_t type; // 0: token, 1: int
+	uint8_t type; // 0: token, 1: int, 2: literal token
 } symbol_t;
 
 symbol_t ERR;
@@ -129,7 +129,7 @@ void push_int_vec(int_vec *v, int32_t c) {
 	++v->size;
 	if (v->size == v->capacity) {
 		v->capacity *= 2;
-		v->data = realloc(sizeof(int32_t) * v->capacity);
+		v->data = realloc(v->data, sizeof(int32_t) * v->capacity);
 	}
 }
 
@@ -159,7 +159,7 @@ bool is_whitespace(char c) {
 
 void show_symbol(int32_t i) {
 	if (i < 0 || i >= stack.size) printf("<OOB>");
-	else if (stack.data[i].type == 0) {
+	else if (stack.data[i].type == 0 || stack.data[i].type == 2) {
 		int32_t fid = stack.data[i].data;
 		if (fid < 0 || fid >= symbols.size) printf("<INV>");
 		else {
@@ -203,6 +203,8 @@ void INIT_PRIMITIVES() {
 	push_string_vec(&symbols, "if", 2);
 	push_string_vec(&symbols, "else", 4);
 	push_string_vec(&symbols, "then", 4);
+	// exec
+	push_string_vec(&symbols, "exec", 4);
 	// ---
 	PRIMITIVE_FLOOR = symbols.size;
 }
@@ -528,20 +530,20 @@ void exec_primitive(int32_t fid) {
 		}
 	}
 	if (fid == cmp++) {
-		if (stack.size >= 2 && stack.data[stack.size-1].type ==
-				stack.data[stack.size-2].type) {
+		if (stack.size >= 2) {
 			symbol_t res;
 			res.type = 1;
-			res.data = stack.data[stack.size-2].data ==
-				stack.data[stack.size-1].data;
+			res.data = (stack.data[stack.size-2].data ==
+				stack.data[stack.size-1].data) &&
+				(stack.data[stack.size-2].type ==
+				stack.data[stack.size-1].type);
 			pop_symbol_vec(&stack);
 			pop_symbol_vec(&stack);
 			push_symbol_vec(&stack, res);
 
 		} else {
 			START_ERR_FMT();
-			printf(" [[ERR: operation '==' expects (int, int) or (sym sym), "
-					"received: ");
+			printf(" [[ERR: operation '==' expects (sym sym), received: ");
 			show_symbol(stack.size-2);
 			printf(" ");
 			show_symbol(stack.size-1);
@@ -571,20 +573,20 @@ void exec_primitive(int32_t fid) {
 		}
 	}
 	if (fid == cmp++) {
-		if (stack.size >= 2 && stack.data[stack.size-1].type ==
-				stack.data[stack.size-2].type) {
+		if (stack.size >= 2) {
 			symbol_t res;
 			res.type = 1;
-			res.data = stack.data[stack.size-2].data !=
-				stack.data[stack.size-1].data;
+			res.data = (stack.data[stack.size-2].data !=
+				stack.data[stack.size-1].data) ||
+				(stack.data[stack.size-2].type !=
+				stack.data[stack.size-1].type);
 			pop_symbol_vec(&stack);
 			pop_symbol_vec(&stack);
 			push_symbol_vec(&stack, res);
 
 		} else {
 			START_ERR_FMT();
-			printf(" [[ERR: operation '!=' expects (int, int) or (sym sym), "
-					"received: ");
+			printf(" [[ERR: operation '!=' expects (sym sym), received: ");
 			show_symbol(stack.size-2);
 			printf(" ");
 			show_symbol(stack.size-1);
@@ -645,6 +647,19 @@ void exec_primitive(int32_t fid) {
 			END_ERR_FMT();
 		}
 	}
+
+	// exec
+	if (fid == cmp++) {
+		if (stack.size >= 1 && stack.data[stack.size-1].type == 2) {
+			stack.data[stack.size-1].type = 0;
+
+		} else {
+			START_ERR_FMT();
+			printf(" [[ERR: operation 'exec' expects (\"sym), received: ");
+			show_symbol(stack.size-1);
+			printf("]] ");
+		}
+	}
 }
 
 bool implementation_exists(int32_t fid) {
@@ -652,9 +667,9 @@ bool implementation_exists(int32_t fid) {
 	return symbols.impl[fid].size > 0;
 }
 
-int exec_loop();
+void exec_loop();
 
-int exec(int32_t fid) {
+void exec(int32_t fid) {
 	for (size_t i=0; i<symbols.impl[fid].size; ++i) {
 		symbol_t s = symbols.impl[fid].data[i];
 
@@ -667,11 +682,12 @@ int exec(int32_t fid) {
 			}
 		}
 
+		uint8_t literal = s.type == 2;
+		if (s.type == 2) s.type = 0;
+		if (s.type == 3) s.type = 2;
 		push_symbol_vec(&stack, s);
-		if (exec_loop()) return 1;
+		if (!literal) exec_loop();
 	}
-
-	return 0;
 }
 
 // 0: execute
@@ -680,43 +696,29 @@ int exec(int32_t fid) {
 int32_t exec_mode = 0;
 int32_t compile_head = -1;
 
-int exec_loop() {
+void exec_loop() {
 	while (stack.size && stack.data[stack.size-1].type == 0) {
 		int32_t fid = stack.data[stack.size-1].data;
 
 		if (implementation_exists(fid)) {
-			//printf(" [[impl exists!! %d]] ", fid);
 			pop_symbol_vec(&stack);
-			if (exec(fid)) return 1;
+			exec(fid);
 
 		} else if (fid < PRIMITIVE_FLOOR) {
 			pop_symbol_vec(&stack);
 			exec_primitive(fid);
 
-		}else if (fid < 0 || fid >= symbols.size) {
+		} else if (fid < 0 || fid >= symbols.size) {
 			START_ERR_FMT();
 			printf(" [[ERR: invalid function: id(%d)]] ", fid);
 			END_ERR_FMT();
 
-		} else {
-			/*
-			START_ERR_FMT();
-			printf(" [[ERR: function not implemented: id(%d), sym(", fid);
-			for (size_t j=symbols.indices[fid]; j<symbols.indices[fid+1]; ++j) {
-				printf("%c", symbols.strings[j]);
-			}
-			printf(")]] ");
-			END_ERR_FMT();
-			return 1;
-			*/
-			return 0;
-		}
+		} else return;
 	}
-
-	return 0;
 }
 
 void process_symbol(symbol_t s) {
+
 	if (exec_mode == 0) {
 		if (logic_stack.size > 0) {
 			int32_t state = top_int_vec(&logic_stack);
@@ -727,12 +729,15 @@ void process_symbol(symbol_t s) {
 			}
 		}
 
+		uint8_t literal = s.type == 2;
+		if (s.type == 2) s.type = 0;
+		if (s.type == 3) s.type = 2;
 		push_symbol_vec(&stack, s);
-		exec_loop();
+		if (!literal) exec_loop();
 
 	} else if(exec_mode == 1) {
 		if (compile_head < 0 || compile_head >= symbols.size) {
-			// TODO: decide how to fail
+			// TODO: should this be fatal error?
 		} else {
 			push_symbol_vec(symbols.impl+compile_head, s);
 		}
@@ -784,6 +789,7 @@ int main() {
 			// 3: int-
 			size_t state = 0;
 			size_t start = 0;
+			uint8_t literal = 0;
 
 			int int_buf = 0;
 
@@ -793,12 +799,6 @@ int main() {
 						symbol_t res;
 
 						if (state == 1) {
-							/*
-							printf("<<processing string (");
-							for (size_t j=start; j<i; ++j) printf("%c", line[j]);
-							printf(")>>");
-							*/
-							// insert into vec, return id
 							res.data = lookup_string_vec(&symbols,
 									line+start, i-start);
 							if (res.data == -1) {
@@ -806,20 +806,21 @@ int main() {
 								res.data = lookup_string_vec(&symbols,
 										line+start, i-start);
 							}
+
 							res.type = 0;
+							if (literal == 1) res.type = 2;
+							if (literal == 2) res.type = 3;
 
 						} else if (state == 2 || state == 3) {
-							//printf("<<processing int (%d)>>", int_buf);
 							res.data = int_buf;
 							res.type = 1;
 						}
 
-						//printf("<<exec mode: %d>>", exec_mode);
 						process_symbol(res);
-						//push_symbol_vec(&stack, res);
-						//exec_loop();
 
 					}
+
+					literal = 0;
 
 					state = 0;
 					start = i+1;
@@ -851,6 +852,18 @@ int main() {
 					} else if (line[i] >= '0' && line[i] <= '9') {
 						int_buf = line[i]-'0';
 						state = 2;
+
+					} else if (line[i] == '\'') {
+						literal = 1;
+
+						state = 1;
+						start = i+1;
+
+					} else if (line[i] == '"') {
+						literal = 2;
+
+						state = 1;
+						start = i+1;
 
 					} else {
 						state = 1;
