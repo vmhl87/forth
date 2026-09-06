@@ -1,4 +1,5 @@
 #include <assert.h>
+#include <string.h>
 #include <stdlib.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -803,6 +804,108 @@ void process_symbol(symbol_t s) {
 	}
 }
 
+void interpret(char *line, ssize_t bytes) {
+	for (size_t i=0; i<bytes; ++i) if (line[i] == '(' || line[i] == ')')
+		line[i] = ' ';
+
+	// 1: str
+	// 2: int+
+	// 3: int-
+	size_t state = 0;
+	size_t start = 0;
+	uint8_t literal = 0;
+
+	int int_buf = 0;
+
+	for (size_t i=0; i<=bytes; ++i) {
+		if (i == bytes || is_whitespace(line[i])) {
+			if (state != 0) {
+				symbol_t res;
+
+				if (state == 1) {
+					res.data = lookup_string_vec(&symbols,
+							line+start, i-start);
+					if (res.data == -1) {
+						push_string_vec(&symbols, line+start, i-start);
+						res.data = lookup_string_vec(&symbols,
+								line+start, i-start);
+					}
+
+					res.type = 0;
+					if (literal == 1) res.type = 2;
+					if (literal == 2) res.type = 3;
+
+				} else if (state == 2 || state == 3) {
+					res.data = int_buf;
+					res.type = 1;
+				}
+
+				process_symbol(res);
+
+			}
+
+			literal = 0;
+
+			state = 0;
+			start = i+1;
+
+		} else if (state == 0) {
+			// switch to define mode
+			if (line[i] == '{') {
+				exec_mode = 2;
+				
+				state = 0;
+				start = i+1;
+
+			} else if (line[i] == '}') {
+				exec_mode = 0;
+				compile_head = -1;
+
+				state = 0;
+				start = i+1;
+
+			} else if (line[i] == '-') {
+				if (i+1 < bytes && !is_whitespace(line[i+1])) {
+					int_buf = 0;
+					state = 3;
+
+				} else {
+					state = 1;
+				}
+
+			} else if (line[i] >= '0' && line[i] <= '9') {
+				int_buf = line[i]-'0';
+				state = 2;
+
+			} else if (line[i] == '\'') {
+				literal = 1;
+
+				state = 1;
+				start = i+1;
+
+			} else if (line[i] == '"') {
+				literal = 2;
+
+				state = 1;
+				start = i+1;
+
+			} else {
+				state = 1;
+			}
+			
+		} else if (state == 2) {
+			int_buf = 10*int_buf + (line[i]-'0');
+
+		} else if (state == 3) {
+			int_buf = 10*int_buf - (line[i]-'0');
+		}
+	}
+}
+
+void static_interpret(char *line) {
+	interpret(line, strlen(line));
+}
+
 int main() {
 	ERR.type = -1;
 
@@ -823,111 +926,9 @@ int main() {
 		ssize_t bytes;
 		if ((bytes = getline(&line, &capacity, stdin)) == -1) break;
 
-		//printf("bytes: %d, last char: %d\n", bytes, line[bytes-1]);
+		interpret(line, bytes);
 
-		for (size_t i=0; i<bytes; ++i) if (line[i] == '(' || line[i] == ')')
-			line[i] = ' ';
-
-		{
-			// 1: str
-			// 2: int+
-			// 3: int-
-			size_t state = 0;
-			size_t start = 0;
-			uint8_t literal = 0;
-
-			int int_buf = 0;
-
-			for (size_t i=0; i<bytes; ++i) {
-				if (is_whitespace(line[i])) {
-					if (state != 0) {
-						symbol_t res;
-
-						if (state == 1) {
-							res.data = lookup_string_vec(&symbols,
-									line+start, i-start);
-							if (res.data == -1) {
-								push_string_vec(&symbols, line+start, i-start);
-								res.data = lookup_string_vec(&symbols,
-										line+start, i-start);
-							}
-
-							res.type = 0;
-							if (literal == 1) res.type = 2;
-							if (literal == 2) res.type = 3;
-
-						} else if (state == 2 || state == 3) {
-							res.data = int_buf;
-							res.type = 1;
-						}
-
-						process_symbol(res);
-
-					}
-
-					literal = 0;
-
-					state = 0;
-					start = i+1;
-
-				} else if (state == 0) {
-					// switch to define mode
-					if (line[i] == '{') {
-						exec_mode = 2;
-						
-						state = 0;
-						start = i+1;
-
-					} else if (line[i] == '}') {
-						exec_mode = 0;
-						compile_head = -1;
-
-						state = 0;
-						start = i+1;
-
-					} else if (line[i] == '-') {
-						if (i+1 < bytes && !is_whitespace(line[i+1])) {
-							int_buf = 0;
-							state = 3;
-
-						} else {
-							state = 1;
-						}
-
-					} else if (line[i] >= '0' && line[i] <= '9') {
-						int_buf = line[i]-'0';
-						state = 2;
-
-					} else if (line[i] == '\'') {
-						literal = 1;
-
-						state = 1;
-						start = i+1;
-
-					} else if (line[i] == '"') {
-						literal = 2;
-
-						state = 1;
-						start = i+1;
-
-					} else {
-						state = 1;
-					}
-					
-				} else if (state == 2) {
-					int_buf = 10*int_buf + (line[i]-'0');
-
-				} else if (state == 3) {
-					int_buf = 10*int_buf - (line[i]-'0');
-				}
-			}
-
-			if (bytes != 0) free(line);
-		};
-
-		//if (stack.size != 0) {
-			//puts("[execution stack not empty]");
-		//}
+		if (bytes != 0) free(line);
 	}
 
 	puts("execution complete!");
