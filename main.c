@@ -171,7 +171,7 @@ void show_symbol(int32_t i) {
 	else if (stack.data[i].type == -1) printf("<ERR>");
 }
 
-int32_t PRIMITIVE_FLOOR = 0, CONDITIONAL_FLOOR = 0;
+int32_t PRIMITIVE_FLOOR = 0, CONDITIONAL_FLOOR = 0, CONDITIONAL_CEIL = 0;
 
 void INIT_PRIMITIVES() {
 	// arithmetic
@@ -195,7 +195,9 @@ void INIT_PRIMITIVES() {
 	push_string_vec(&symbols, "show", 4);
 	// logic
 	push_string_vec(&symbols, "<", 1);
+	push_string_vec(&symbols, "<=", 2);
 	push_string_vec(&symbols, "==", 2);
+	push_string_vec(&symbols, ">=", 2);
 	push_string_vec(&symbols, ">", 1);
 	push_string_vec(&symbols, "!=", 2);
 	// conditional
@@ -203,6 +205,7 @@ void INIT_PRIMITIVES() {
 	push_string_vec(&symbols, "if", 2);
 	push_string_vec(&symbols, "else", 4);
 	push_string_vec(&symbols, "then", 4);
+	CONDITIONAL_FLOOR = symbols.size;
 	// exec
 	push_string_vec(&symbols, "exec", 4);
 	// ---
@@ -530,6 +533,27 @@ void exec_primitive(int32_t fid) {
 		}
 	}
 	if (fid == cmp++) {
+		if (stack.size >= 2 && stack.data[stack.size-1].type == 1 &&
+				stack.data[stack.size-2].type == 1) {
+			symbol_t res;
+			res.type = 1;
+			res.data = stack.data[stack.size-2].data <=
+				stack.data[stack.size-1].data;
+			pop_symbol_vec(&stack);
+			pop_symbol_vec(&stack);
+			push_symbol_vec(&stack, res);
+
+		} else {
+			START_ERR_FMT();
+			printf(" [[ERR: operation '<=' expects (int, int), received: ");
+			show_symbol(stack.size-2);
+			printf(" ");
+			show_symbol(stack.size-1);
+			printf("]] ");
+			END_ERR_FMT();
+		}
+	}
+	if (fid == cmp++) {
 		if (stack.size >= 2) {
 			symbol_t res;
 			res.type = 1;
@@ -544,6 +568,27 @@ void exec_primitive(int32_t fid) {
 		} else {
 			START_ERR_FMT();
 			printf(" [[ERR: operation '==' expects (sym sym), received: ");
+			show_symbol(stack.size-2);
+			printf(" ");
+			show_symbol(stack.size-1);
+			printf("]] ");
+			END_ERR_FMT();
+		}
+	}
+	if (fid == cmp++) {
+		if (stack.size >= 2 && stack.data[stack.size-1].type == 1 &&
+				stack.data[stack.size-2].type == 1) {
+			symbol_t res;
+			res.type = 1;
+			res.data = stack.data[stack.size-2].data >=
+				stack.data[stack.size-1].data;
+			pop_symbol_vec(&stack);
+			pop_symbol_vec(&stack);
+			push_symbol_vec(&stack, res);
+
+		} else {
+			START_ERR_FMT();
+			printf(" [[ERR: operation '>=' expects (int, int), received: ");
 			show_symbol(stack.size-2);
 			printf(" ");
 			show_symbol(stack.size-1);
@@ -724,7 +769,7 @@ void process_symbol(symbol_t s) {
 			int32_t state = top_int_vec(&logic_stack);
 			if ((state == 2 || state == 3) && (s.type == 1 ||
 						s.data < CONDITIONAL_FLOOR ||
-						s.data >= CONDITIONAL_FLOOR + 3)) {
+						s.data >= CONDITIONAL_CEIL)) {
 				return;
 			}
 		}
