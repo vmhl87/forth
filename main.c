@@ -39,7 +39,7 @@ void pop_symbol_vec(symbol_vec* v) {
 	assert(v->size > 0);
 	--v->size;
 	if (v->size < v->capacity/4 && v->capacity > 4) {
-		v->capacity /= 4;
+		v->capacity /= 2;
 		if (v->capacity < 4) v->capacity = 4;
 		v->data = realloc(v->data, sizeof(symbol_t) * v->capacity);
 	}
@@ -129,7 +129,7 @@ void push_int_vec(int_vec *v, int32_t c) {
 	++v->size;
 	if (v->size == v->capacity) {
 		v->capacity *= 2;
-		v->data = malloc(sizeof(int32_t) * v->capacity);
+		v->data = realloc(sizeof(int32_t) * v->capacity);
 	}
 }
 
@@ -137,7 +137,7 @@ void pop_int_vec(int_vec *v) {
 	assert(v->size > 0);
 	--v->size;
 	if (v->size < v->capacity/4 && v->capacity > 4) {
-		v->capacity /= 4;
+		v->capacity /= 2;
 		if (v->capacity < 4) v->capacity = 4;
 		v->data = realloc(v->data, sizeof(int32_t) * v->capacity);
 	}
@@ -186,8 +186,8 @@ void INIT_PRIMITIVES() {
 	push_string_vec(&symbols, "^", 1);
 	push_string_vec(&symbols, "~", 1);
 	// load
-	// TODO: maybe add heap?
 	push_string_vec(&symbols, "get", 3);
+	push_string_vec(&symbols, "set", 3);
 	// pop
 	push_string_vec(&symbols, "pop", 3);
 	// output
@@ -418,7 +418,7 @@ void exec_primitive(int32_t fid) {
 		}
 	}
 
-	// get
+	// get + set
 	if (fid == cmp++) {
 		if (stack.size >= 1 && stack.data[stack.size-1].type == 1) {
 			int32_t index = stack.size-2 - stack.data[stack.size-1].data;
@@ -436,6 +436,31 @@ void exec_primitive(int32_t fid) {
 		} else {
 			START_ERR_FMT();
 			printf("ERR: operation 'get' expects (int), received: ");
+			show_symbol(stack.size-1);
+			printf("\n");
+			END_ERR_FMT();
+		}
+	}
+	if (fid == cmp++) {
+		if (stack.size >= 2 && stack.data[stack.size-1].type == 1) {
+			int32_t index = stack.size-3 - stack.data[stack.size-1].data;
+			if (index < 0) {
+				START_ERR_FMT();
+				printf(" [[ERR: cannot get stack frame %d: out of bounds]] ",
+						stack.data[stack.size-1].data);
+				END_ERR_FMT();
+				return;
+			}
+			symbol_t res = stack.data[stack.size-2];
+			pop_symbol_vec(&stack);
+			pop_symbol_vec(&stack);
+			stack.data[index] = res;
+
+		} else {
+			START_ERR_FMT();
+			printf("ERR: operation 'set' expects (sym, int), received: ");
+			show_symbol(stack.size-2);
+			printf(" ");
 			show_symbol(stack.size-1);
 			printf("\n");
 			END_ERR_FMT();
@@ -574,7 +599,7 @@ void exec_primitive(int32_t fid) {
 		} else if (logic_stack.size > 0 && top_int_vec(&logic_stack) == 3) {
 			push_int_vec(&logic_stack, 3);
 
-		}else if (stack.size >= 1 && stack.data[stack.size-1].type == 1) {
+		} else if (stack.size >= 1 && stack.data[stack.size-1].type == 1) {
 			if (stack.data[stack.size-1].data) {
 				pop_symbol_vec(&stack);
 				push_int_vec(&logic_stack, 1);
@@ -631,7 +656,18 @@ int exec_loop();
 
 int exec(int32_t fid) {
 	for (size_t i=0; i<symbols.impl[fid].size; ++i) {
-		push_symbol_vec(&stack, symbols.impl[fid].data[i]);
+		symbol_t s = symbols.impl[fid].data[i];
+
+		if (logic_stack.size > 0) {
+			int32_t state = top_int_vec(&logic_stack);
+			if ((state == 2 || state == 3) && (s.type == 1 ||
+						s.data < CONDITIONAL_FLOOR ||
+						s.data >= CONDITIONAL_FLOOR + 3)) {
+				continue;
+			}
+		}
+
+		push_symbol_vec(&stack, s);
 		if (exec_loop()) return 1;
 	}
 
@@ -663,6 +699,7 @@ int exec_loop() {
 			END_ERR_FMT();
 
 		} else {
+			/*
 			START_ERR_FMT();
 			printf(" [[ERR: function not implemented: id(%d), sym(", fid);
 			for (size_t j=symbols.indices[fid]; j<symbols.indices[fid+1]; ++j) {
@@ -671,6 +708,8 @@ int exec_loop() {
 			printf(")]] ");
 			END_ERR_FMT();
 			return 1;
+			*/
+			return 0;
 		}
 	}
 
@@ -700,7 +739,9 @@ void process_symbol(symbol_t s) {
 
 	} else if(exec_mode == 2) {
 		if (s.type == 1) {
-			puts(" [[ ERR: cannot assign function body to non-symbol]] ");
+			START_ERR_FMT();
+			printf(" [[ERR: cannot assign function body to non-symbol]] ");
+			END_ERR_FMT();
 			compile_head = -1;
 
 		} else {
@@ -723,8 +764,9 @@ int main() {
 	INIT_PRIMITIVES();
 
 	while (1) {
-		//printf("\x1b[2;31m%d\x1b[0m", top_int_vec(&logic_stack));
-		printf("\x1b[2;37m%d >\x1b[0m ", stack.size); fflush(stdout);
+		printf("\x1b[2;37m[%d%d]\x1b[0m ",
+				top_int_vec(&logic_stack), stack.size);
+		fflush(stdout);
 
 		char *line = nullptr;
 		size_t capacity;
@@ -733,7 +775,7 @@ int main() {
 
 		//printf("bytes: %d, last char: %d\n", bytes, line[bytes-1]);
 
-		for (size_t i=0; i<bytes; ++i) if (line[i] == '[' || line[i] == ']')
+		for (size_t i=0; i<bytes; ++i) if (line[i] == '(' || line[i] == ')')
 			line[i] = ' ';
 
 		{
