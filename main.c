@@ -211,6 +211,7 @@ void INIT_PRIMITIVES() {
 	CONDITIONAL_CEIL = symbols.size;
 	// exec
 	push_string_vec(&symbols, "exec", 4);
+	push_string_vec(&symbols, "nil", 3);
 	// ---
 	PRIMITIVE_FLOOR = symbols.size;
 }
@@ -708,6 +709,7 @@ void exec_primitive(int32_t fid) {
 			printf("]] ");
 		}
 	}
+	if (fid == cmp++) { /* skip */ }
 }
 
 bool implementation_exists(int32_t fid) {
@@ -921,10 +923,18 @@ int main() {
 	static_interpret("{ p show nl }");
 	static_interpret("{ P p pop }");
 
+	static_interpret("{ fact (0 get) (1 >) if "
+			"(0 get) (1 -) fact * then }");
+
 	static_interpret("{ fib (0 get) (1 >) if "
 			"(0 get) (1 -) fib "
 			"(1 get) (2 -) fib "
 			"+ (0 set) then }");
+
+	static_interpret("{ map (2 get) ([ ==) if "
+			"pop pop pop else "
+			"(2 get) (1 get) exec P "
+			"(0 set) ] (1 set) map then }");
 	
 	// END BUILTIN LOGIC
 
