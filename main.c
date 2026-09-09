@@ -160,18 +160,23 @@ bool is_whitespace(char c) {
 	return 0;
 }
 
-void show_symbol(int32_t i) {
-	if (i < 0 || i >= stack.size) printf("<OOB>");
-	else if (stack.data[i].type == 0 || stack.data[i].type == 2) {
-		int32_t fid = stack.data[i].data;
+void show_symbol(symbol_t s) {
+	if (s.type == 0 || s.type == 2) {
+		int32_t fid = s.data;
 		if (fid < 0 || fid >= symbols.size) printf("<INV>");
 		else {
 			for (size_t j=symbols.indices[fid]; j<symbols.indices[fid+1]; ++j) {
 				printf("%c", symbols.strings[j]);
 			}
 		}
-	} else if (stack.data[i].type == 1) printf("%d", stack.data[i].data);
-	else if (stack.data[i].type == -1) printf("<ERR>");
+	} else if (s.type == 1) printf("%d", s.data);
+	else if (s.type == -1) printf("<ERR>");
+	else printf("<###>");
+}
+
+void stack_show_symbol(int32_t i) {
+	if (i < 0 || i >= stack.size) printf("<OOB>");
+	else show_symbol(stack.data[stack.size-1-i]);
 }
 
 int32_t PRIMITIVE_FLOOR = 0, CONDITIONAL_FLOOR = 0, CONDITIONAL_CEIL = 0;
@@ -234,9 +239,9 @@ void exec_primitive(int32_t fid) {
 		} else {
 			START_ERR_FMT();
 			printf(" [[ERR: operation '+' expects (int, int), received: ");
-			show_symbol(stack.size-2);
+			stack_show_symbol(1);
 			printf(" ");
-			show_symbol(stack.size-1);
+			stack_show_symbol(0);
 			printf("]] ");
 			END_ERR_FMT();
 		}
@@ -255,9 +260,9 @@ void exec_primitive(int32_t fid) {
 		} else {
 			START_ERR_FMT();
 			printf(" [[ERR: operation '-' expects (int, int), received: ");
-			show_symbol(stack.size-2);
+			stack_show_symbol(1);
 			printf(" ");
-			show_symbol(stack.size-1);
+			stack_show_symbol(0);
 			printf("]] ");
 			END_ERR_FMT();
 		}
@@ -276,9 +281,9 @@ void exec_primitive(int32_t fid) {
 		} else {
 			START_ERR_FMT();
 			printf(" [[ERR: operation '*' expects (int, int), received: ");
-			show_symbol(stack.size-2);
+			stack_show_symbol(1);
 			printf(" ");
-			show_symbol(stack.size-1);
+			stack_show_symbol(0);
 			printf("]] ");
 			END_ERR_FMT();
 		}
@@ -289,9 +294,9 @@ void exec_primitive(int32_t fid) {
 			if (stack.data[stack.size-2].data == 0) {
 				START_ERR_FMT();
 				printf(" [[ERR: division by zero: ");
-				show_symbol(stack.size-2);
+				stack_show_symbol(1);
 				printf(" ");
-				show_symbol(stack.size-1);
+				stack_show_symbol(0);
 				printf("]] ");
 				END_ERR_FMT();
 				return;
@@ -307,9 +312,9 @@ void exec_primitive(int32_t fid) {
 		} else {
 			START_ERR_FMT();
 			printf(" [[ERR: operation '/' expects (int, int), received: ");
-			show_symbol(stack.size-2);
+			stack_show_symbol(1);
 			printf(" ");
-			show_symbol(stack.size-1);
+			stack_show_symbol(0);
 			printf("]] ");
 			END_ERR_FMT();
 		}
@@ -320,9 +325,9 @@ void exec_primitive(int32_t fid) {
 			if (stack.data[stack.size-2].data == 0) {
 				START_ERR_FMT();
 				printf(" [[ERR: modulo by zero: ");
-				show_symbol(stack.size-2);
+				stack_show_symbol(1);
 				printf(" ");
-				show_symbol(stack.size-1);
+				stack_show_symbol(0);
 				printf("]] ");
 				END_ERR_FMT();
 				return;
@@ -338,9 +343,9 @@ void exec_primitive(int32_t fid) {
 		} else {
 			START_ERR_FMT();
 			printf(" [[ERR: operation '%%' expects (int, int), received: ");
-			show_symbol(stack.size-2);
+			stack_show_symbol(1);
 			printf(" ");
-			show_symbol(stack.size-1);
+			stack_show_symbol(0);
 			printf("]] ");
 			END_ERR_FMT();
 		}
@@ -361,9 +366,9 @@ void exec_primitive(int32_t fid) {
 		} else {
 			START_ERR_FMT();
 			printf(" [[ERR: operation '&' expects (int, int), received: ");
-			show_symbol(stack.size-2);
+			stack_show_symbol(1);
 			printf(" ");
-			show_symbol(stack.size-1);
+			stack_show_symbol(0);
 			printf("]] ");
 			END_ERR_FMT();
 		}
@@ -382,9 +387,9 @@ void exec_primitive(int32_t fid) {
 		} else {
 			START_ERR_FMT();
 			printf(" [[ERR: operation '|' expects (int, int), received: ");
-			show_symbol(stack.size-2);
+			stack_show_symbol(1);
 			printf(" ");
-			show_symbol(stack.size-1);
+			stack_show_symbol(0);
 			printf("]] ");
 			END_ERR_FMT();
 		}
@@ -403,9 +408,9 @@ void exec_primitive(int32_t fid) {
 		} else {
 			START_ERR_FMT();
 			printf(" [[ERR: operation '^' expects (int, int), received: ");
-			show_symbol(stack.size-2);
+			stack_show_symbol(1);
 			printf(" ");
-			show_symbol(stack.size-1);
+			stack_show_symbol(0);
 			printf("]] ");
 			END_ERR_FMT();
 		}
@@ -421,7 +426,7 @@ void exec_primitive(int32_t fid) {
 		} else {
 			START_ERR_FMT();
 			printf(" [[ERR: operation '~' expects (int), received: ");
-			show_symbol(stack.size-1);
+			stack_show_symbol(0);
 			printf("]] ");
 			END_ERR_FMT();
 		}
@@ -445,7 +450,7 @@ void exec_primitive(int32_t fid) {
 		} else {
 			START_ERR_FMT();
 			printf("ERR: operation 'get' expects (int), received: ");
-			show_symbol(stack.size-1);
+			stack_show_symbol(0);
 			printf("\n");
 			END_ERR_FMT();
 		}
@@ -468,9 +473,9 @@ void exec_primitive(int32_t fid) {
 		} else {
 			START_ERR_FMT();
 			printf("ERR: operation 'set' expects (sym, int), received: ");
-			show_symbol(stack.size-2);
+			stack_show_symbol(1);
 			printf(" ");
-			show_symbol(stack.size-1);
+			stack_show_symbol(0);
 			printf("\n");
 			END_ERR_FMT();
 		}
@@ -496,19 +501,19 @@ void exec_primitive(int32_t fid) {
 		} else {
 			START_ERR_FMT();
 			printf(" [[ERR: operation 'print' expects (int), received: ");
-			show_symbol(stack.size-1);
+			stack_show_symbol(0);
 			printf("]] ");
 			END_ERR_FMT();
 		}
 	}
 	if (fid == cmp++) {
 		if (stack.size >= 1) {
-			show_symbol(stack.size-1);
+			show_symbol(stack.data[stack.size-1]);
 
 		} else {
 			START_ERR_FMT();
 			printf(" [[ERR: operation 'show' expects (sym), received: ");
-			show_symbol(stack.size-1);
+			stack_show_symbol(0);
 			printf("]] ");
 			END_ERR_FMT();
 		}
@@ -529,9 +534,9 @@ void exec_primitive(int32_t fid) {
 		} else {
 			START_ERR_FMT();
 			printf(" [[ERR: operation '<' expects (int, int), received: ");
-			show_symbol(stack.size-2);
+			stack_show_symbol(1);
 			printf(" ");
-			show_symbol(stack.size-1);
+			stack_show_symbol(0);
 			printf("]] ");
 			END_ERR_FMT();
 		}
@@ -550,9 +555,9 @@ void exec_primitive(int32_t fid) {
 		} else {
 			START_ERR_FMT();
 			printf(" [[ERR: operation '<=' expects (int, int), received: ");
-			show_symbol(stack.size-2);
+			stack_show_symbol(1);
 			printf(" ");
-			show_symbol(stack.size-1);
+			stack_show_symbol(0);
 			printf("]] ");
 			END_ERR_FMT();
 		}
@@ -572,9 +577,9 @@ void exec_primitive(int32_t fid) {
 		} else {
 			START_ERR_FMT();
 			printf(" [[ERR: operation '==' expects (sym sym), received: ");
-			show_symbol(stack.size-2);
+			stack_show_symbol(1);
 			printf(" ");
-			show_symbol(stack.size-1);
+			stack_show_symbol(0);
 			printf("]] ");
 			END_ERR_FMT();
 		}
@@ -593,9 +598,9 @@ void exec_primitive(int32_t fid) {
 		} else {
 			START_ERR_FMT();
 			printf(" [[ERR: operation '>=' expects (int, int), received: ");
-			show_symbol(stack.size-2);
+			stack_show_symbol(1);
 			printf(" ");
-			show_symbol(stack.size-1);
+			stack_show_symbol(0);
 			printf("]] ");
 			END_ERR_FMT();
 		}
@@ -614,9 +619,9 @@ void exec_primitive(int32_t fid) {
 		} else {
 			START_ERR_FMT();
 			printf(" [[ERR: operation '>' expects (int, int), received: ");
-			show_symbol(stack.size-2);
+			stack_show_symbol(1);
 			printf(" ");
-			show_symbol(stack.size-1);
+			stack_show_symbol(0);
 			printf("]] ");
 			END_ERR_FMT();
 		}
@@ -636,9 +641,9 @@ void exec_primitive(int32_t fid) {
 		} else {
 			START_ERR_FMT();
 			printf(" [[ERR: operation '!=' expects (sym sym), received: ");
-			show_symbol(stack.size-2);
+			stack_show_symbol(1);
 			printf(" ");
-			show_symbol(stack.size-1);
+			stack_show_symbol(0);
 			printf("]] ");
 			END_ERR_FMT();
 		}
@@ -663,7 +668,7 @@ void exec_primitive(int32_t fid) {
 		} else {
 			START_ERR_FMT();
 			printf(" [[ERR: operation 'if' expects (int), received: ");
-			show_symbol(stack.size-1);
+			stack_show_symbol(0);
 			printf("]] ");
 			END_ERR_FMT();
 		}
@@ -705,7 +710,7 @@ void exec_primitive(int32_t fid) {
 		} else {
 			START_ERR_FMT();
 			printf(" [[ERR: operation 'exec' expects (\"sym), received: ");
-			show_symbol(stack.size-1);
+			stack_show_symbol(0);
 			printf("]] ");
 		}
 	}
